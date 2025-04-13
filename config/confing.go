@@ -9,6 +9,12 @@ import (
 
 var BotToken string
 var AdminId int64
+var TerminalData *Terminal
+
+type Terminal struct {
+	TerminalKey      string
+	TerminalPassword string
+}
 
 func Load() error {
 	err := godotenv.Load()
@@ -21,5 +27,11 @@ func Load() error {
 	}
 	AdminId = adminId
 	BotToken = os.Getenv("BOT_TOKEN")
+
+	TerminalData = &Terminal{
+		os.Getenv("TERMINAL_KEY"),
+		os.Getenv("TERMINAL_PASSWORD"),
+	}
+
 	return nil
 }

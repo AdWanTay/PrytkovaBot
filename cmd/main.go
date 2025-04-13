@@ -2,6 +2,7 @@ package main
 
 import (
 	"PrytkovaBot/internal/handlers"
+	"PrytkovaBot/internal/storage"
 	"time"
 
 	tele "gopkg.in/telebot.v4"
@@ -10,14 +11,17 @@ import (
 	"log"
 )
 
-//TIP <p>To run your code, right-click the code and select <b>Run</b>.</p> <p>Alternatively, click
-// the <icon src="AllIcons.Actions.Execute"/> icon in the gutter and select the <b>Run</b> menu item from here.</p>
-
 func main() {
 	err := config.Load()
 	if err != nil {
 		log.Fatal("Error loading config: ", err)
 	}
+
+	db, err := storage.InitDB("data.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
 
 	pref := tele.Settings{
 		Token:  config.BotToken,
