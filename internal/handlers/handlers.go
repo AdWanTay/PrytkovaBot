@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"PrytkovaBot/internal/services"
+	st "PrytkovaBot/internal/storage"
 	"PrytkovaBot/internal/utils"
 	"fmt"
 	tele "gopkg.in/telebot.v4"
@@ -24,17 +25,31 @@ const (
 	FirstDietAmount    = 990
 	SecondDietAmount   = 1590
 	CheckPayment       = "check_payment"
+	Book               = "book"
+	MyBooks            = "Мои записи"
 )
 
 func RegisterHandlers(b *tele.Bot, adminId int64) {
 	AdminId = adminId
 	b.Handle("/start", startHandler)
 	b.Handle(tele.OnCallback, inlineButtonHandler)
+	b.Handle(tele.OnText, textHandler)
+}
+
+func textHandler(c tele.Context) error {
+	if c.Text() == MyBooks {
+		return handleMyBooks(c)
+	}
+
+	return nil
 }
 
 func startHandler(c tele.Context) error {
 	if c.Sender().ID == AdminId {
-		return c.Send("Вы администратор")
+		keyboard := &tele.ReplyMarkup{ResizeKeyboard: true}
+		btn := keyboard.Text(MyBooks)
+		keyboard.Reply(keyboard.Row(btn))
+		return c.Send("Вы администратор", keyboard)
 	}
 	selector := &tele.ReplyMarkup{}
 	btnBuy := selector.Data("Рационы", DietButton)
@@ -67,7 +82,8 @@ func inlineButtonHandler(c tele.Context) error {
 		if len(parts) < 2 {
 			return c.Send("Ошибка: некорректный формат данных кнопки")
 		}
-		return handleRegistrationResponse(c, parts[1])
+
+		return handleRegistrationResponse(c, parts[1], parts[2], parts[3])
 	case DietButton:
 		return dietHandler(c)
 	case FirstDiet, SecondDiet:
@@ -81,9 +97,56 @@ func inlineButtonHandler(c tele.Context) error {
 		}
 	case CheckPayment:
 		return handleCheckPayment(c, parts[1], parts[2])
-
+	case Book:
+		return handleBook(c, parts[1])
+	case MyBooks:
+		return handleMyBooks(c)
 	}
 	return c.Respond()
+}
+
+func handleMyBooks(c tele.Context) error {
+	message, err := services.FormatBookedSlots(st.Db)
+	if err != nil {
+		return err
+	}
+	return c.Send(message)
+}
+
+func handleBook(c tele.Context, timeId string) error {
+	slotId, err := strconv.Atoi(timeId)
+	username := c.Sender().Username
+	userId := c.Sender().ID
+	if err != nil {
+		return err
+	}
+
+	slotTime, err := st.GetTimeBySlotId(st.Db, int64(slotId))
+	if err != nil {
+		return err
+	}
+
+	//responseString := utils.PrepareForMarkdown(fmt.Sprintf("Вы записались на консультацию %s в %s. \nПожауйста, заполните [анкету](https://forms.gle/NnZ7XoQkKxS2FmDk9)", slotTime.Format("02.01"), slotTime.Format("15:04")))
+	responseString := fmt.Sprintf("Вы записались на консультацию %s в %s. \nПожауйста, заполните [анкету](https://forms.gle/NnZ7XoQkKxS2FmDk9).", slotTime.Format("02.01"), slotTime.Format("15:04"))
+	fmt.Println(responseString)
+	err = c.Edit(responseString, tele.ModeMarkdown)
+	if err != nil {
+		return err
+	}
+
+	selector := &tele.ReplyMarkup{}
+	btnAccept := selector.Data("✅", fmt.Sprintf("%s@%d@%s@%d", AcceptRegistration, c.Sender().ID, c.Sender().Username, slotId))
+	selector.Inline(
+		selector.Row(btnAccept),
+	)
+
+	_, err = c.Bot().Send(
+		tele.ChatID(AdminId),
+		fmt.Sprintf("Новый клиент: @%s (ID: %d) хочет записаться на консультацию на %s в %s.\nПодтвердить?",
+			username, userId, slotTime.Format("02.01 "), slotTime.Format("15:04"),
+		),
+		selector)
+	return err
 }
 
 func handleCheckPayment(c tele.Context, paymentId string, amount string) error {
@@ -114,7 +177,6 @@ func handlePay(c tele.Context, amount float64) error {
 	selector := &tele.ReplyMarkup{}
 	btnCheckPayment := selector.Data("Проверить платеж", fmt.Sprintf("%s@%s@%f", CheckPayment, paymentId, amount))
 	selector.Inline(selector.Row(btnCheckPayment))
-
 	return c.Edit("Оплатить: "+paymentUrl, selector)
 }
 
@@ -133,20 +195,19 @@ func programsHandler(c tele.Context) error {
 }
 
 func registerHandler(c tele.Context) error {
-	selector := &tele.ReplyMarkup{}
-	btnAccept := selector.Data("✅", fmt.Sprintf("%s@%d", AcceptRegistration, c.Sender().ID))
-	selector.Inline(
-		selector.Row(btnAccept),
-	)
+	btns, err := services.FormatAvailableSlots(st.Db)
+	if err != nil {
+		return err
+	}
+	timeSelector := &tele.ReplyMarkup{}
+	timeSelector.InlineKeyboard = btns
+	err = c.Send("Похоже тебе нужно разобраться в питании, получить советы по планированию рациона или просто разобраться в том, что мешает двигаться вперед, моя консультация — это то, что тебе нужно\\. Мы разберемся, как сделать твое питание здоровым и удобным\\."+
+		"\n*Выбери удобное время:*", tele.ModeMarkdownV2, timeSelector)
 
-	err := c.Send("Похоже тебе нужно разобраться в питании, получить советы по планированию рациона или просто разобраться в том, что мешает двигаться вперед, моя консультация — это то, что тебе нужно\\. Мы разберемся, как сделать твое питание здоровым и удобным\\."+
-		"\n*Заявка отправлена\\. Ожидайте подтверждения\\.*", tele.ModeMarkdownV2)
-
-	_, err = c.Bot().Send(tele.ChatID(AdminId), fmt.Sprintf("Новый клиент: @%s (ID: %d) хочет записаться.\nПодтвердить?", c.Sender().Username, c.Sender().ID), selector)
 	return err
 }
 
-func handleRegistrationResponse(c tele.Context, userIDStr string) error {
+func handleRegistrationResponse(c tele.Context, userIDStr, username, slotId string) error {
 	greeting := "Здравствуйте, я хочу к вам на консультацию."
 	userToId, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
@@ -169,6 +230,16 @@ func handleRegistrationResponse(c tele.Context, userIDStr string) error {
 			selector.URL("Telegram", fmt.Sprintf("https://t.me/ReginaUspeshnaya?text=%s", greeting)),
 		),
 	)
+
+	slotIdInt, err := strconv.Atoi(slotId)
+	if err != nil {
+		return err
+	}
+	err = st.BookSlot(st.Db, slotIdInt, userToId, username)
+	if err != nil {
+		return err
+	}
+
 	responseText := "✅ Запись подтверждена!"
 	_, err = c.Bot().Send(tele.ChatID(userToId), fmt.Sprintf("%s\nПожалуйста, свяжитесь со мной👇🏻", responseText), selector)
 	err = c.Edit(strings.ReplaceAll(c.Message().Text, "Подтвердить?", ""))
@@ -196,10 +267,10 @@ func handleDietButtons(c tele.Context, action string) error {
 	description := ""
 	if action == FirstDiet {
 		unique = Pay + "@" + FirstDiet
-		description = "Описание диеты на 2 недели"
+		description = "🥗 Рацион на 2 недели\nДля мягкого старта и быстрого результата\n\n💚 Хочешь начать питаться правильно, но не знаешь с чего начать?\nЭтот рацион — как надёжная опора: всё продумано за тебя. Без голода, без БАДов, без жёстких ограничений.\n\n🔸 2 недели разнообразного, вкусного и простого питания\n🔸 5 приёмов пищи в день: завтрак, обед, ужин, перекусы\n🔸 Подходит для снижения веса, нормализации аппетита, стабилизации энергии\n🔸 Меню без «странных» продуктов — только то, что можно купить в любом магазине\n🔸 Сбалансировано по белкам, углеводам, жирам\n🔸 Можно готовить на всю семью — они тоже будут в восторге!\n\n🌿 Особенно подойдёт тем, кто:\n— хочет перезапустить питание без стресса\n— пробовал \"ПП\", но всё время срывался\n— хочет убрать вздутие, тягу к сладкому и начать снижать вес\n\n📥 Готов загрузиться заботой? Этот рацион — твой первый шаг к себе.\n"
 	} else if action == SecondDiet {
 		unique = Pay + "@" + SecondDiet
-		description = "Описание диеты на 4 недели"
+		description = "🥑 Рацион на 4 недели\nДля тех, кто готов к устойчивому результату\n\n🌸 4 недели — это не просто меню. Это настоящая перезагрузка тела и питания.\n\nТы не просто ешь.\nТы начинаешь заботиться о себе — осознанно, вкусно, стабильно.\n\n🔹 4 недели разнообразного, лёгкого и вкусного питания\n🔹 Чёткий план без скуки и однообразия\n🔹 Поддержка гормонального фона, ЖКТ и уровня энергии\n🔹 Еда, которая насыщает, а не «разгоняет» аппетит\n🔹 Рацион составлен с учётом физиологии, без дефицитов\n🔹 Без БАДов, без экзотики, без страха перед едой\n\n🌿 Особенно подойдёт тем, кто:\n— хочет не просто похудеть, а перейти на питание, которое держится\n— устал от диет и откатов\n— готов заложить прочную основу для здоровья\n\n🧡 Этот рацион — как личная забота, которая рядом каждый день.\nТы не один/а. Ты в потоке. Ты начинаешь жить легче.\n"
 	}
 	btnBuy := selector.Data("Оплатить", unique)
 	selector.Inline(

@@ -32,6 +32,5 @@ func Load() error {
 		os.Getenv("TERMINAL_KEY"),
 		os.Getenv("TERMINAL_PASSWORD"),
 	}
-
 	return nil
 }

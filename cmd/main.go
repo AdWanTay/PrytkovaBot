@@ -2,6 +2,7 @@ package main
 
 import (
 	"PrytkovaBot/internal/handlers"
+	"PrytkovaBot/internal/services"
 	"PrytkovaBot/internal/storage"
 	"time"
 
@@ -22,6 +23,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
+	services.CreateSlotsPerPeriod(db, 24*time.Hour)
 
 	pref := tele.Settings{
 		Token:  config.BotToken,
