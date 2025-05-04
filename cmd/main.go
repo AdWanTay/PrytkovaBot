@@ -4,6 +4,7 @@ import (
 	"PrytkovaBot/internal/handlers"
 	"PrytkovaBot/internal/services"
 	"PrytkovaBot/internal/storage"
+	"fmt"
 	"time"
 
 	tele "gopkg.in/telebot.v4"
@@ -37,5 +38,7 @@ func main() {
 	}
 
 	handlers.RegisterHandlers(b, config.AdminId)
+	fmt.Println("BOT STARTED")
+
 	b.Start()
 }

@@ -5,15 +5,16 @@ import (
 	"strings"
 )
 
-func GetWhatsAppString() string {
-	whatsAppUrl, err := url.Parse("https://wa.me/79659413788")
+func GetEncodedString(messengerUrl, text string) string {
+	appUrl, err := url.Parse(messengerUrl)
 	if err != nil {
 		panic("boom")
 	}
 	params := url.Values{}
-	params.Add("text", "Здравствуйте, хочу вам на программу.")
-	whatsAppUrl.RawQuery = params.Encode()
-	return whatsAppUrl.String()
+	params.Add("text", text)
+	encodedString := strings.ReplaceAll(params.Encode(), "+", "%20")
+	appUrl.RawQuery = encodedString
+	return appUrl.String()
 }
 
 func PrepareForMarkdown(s string) string {

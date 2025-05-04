@@ -6,8 +6,6 @@ import (
 	"PrytkovaBot/internal/utils"
 	"fmt"
 	tele "gopkg.in/telebot.v4"
-	"log"
-	"net/url"
 	"strconv"
 	"strings"
 )
@@ -27,9 +25,11 @@ const (
 	CheckPayment       = "check_payment"
 	Book               = "book"
 	MyBooks            = "Мои записи"
+	Back               = "back"
 )
 
 func RegisterHandlers(b *tele.Bot, adminId int64) {
+
 	AdminId = adminId
 	b.Handle("/start", startHandler)
 	b.Handle(tele.OnCallback, inlineButtonHandler)
@@ -64,6 +64,7 @@ func startHandler(c tele.Context) error {
 }
 
 func inlineButtonHandler(c tele.Context) error {
+	_ = c.Respond()
 	data := strings.TrimSpace(c.Callback().Data)
 	parts := strings.Split(data, "@")
 
@@ -74,6 +75,14 @@ func inlineButtonHandler(c tele.Context) error {
 	action := parts[0]
 
 	switch action {
+	case Back:
+
+		switch parts[1] {
+		case "start":
+			return startHandler(c)
+		case "diets":
+			return dietHandler(c)
+		}
 	case RegisterButton:
 		return registerHandler(c)
 	case ProgramsButton:
@@ -82,7 +91,6 @@ func inlineButtonHandler(c tele.Context) error {
 		if len(parts) < 2 {
 			return c.Send("Ошибка: некорректный формат данных кнопки")
 		}
-
 		return handleRegistrationResponse(c, parts[1], parts[2], parts[3])
 	case DietButton:
 		return dietHandler(c)
@@ -182,11 +190,15 @@ func handlePay(c tele.Context, amount float64) error {
 
 func programsHandler(c tele.Context) error {
 	selector := &tele.ReplyMarkup{}
+	btnBack := selector.Data("⬅️ Назад", Back+"@start")
+
 	selector.Inline(
 		selector.Row(
-			selector.URL("Хочу на программу!", utils.GetWhatsAppString()),
+			selector.URL("Хочу на программу!", utils.GetEncodedString("https://wa.me/79659413788", "Здравствуйте, хочу к вам на программу.")),
 		),
+		selector.Row(btnBack),
 	)
+
 	return c.Send("Я буду работать с тобой шаг за шагом, отслеживая результат и корректируя программу\\. "+
 		"Обновленная программа включает новые материалы, чек\\-листы и рекомендации\\. Вместе мы проработаем твои цели "+
 		"и сделаем так, чтобы процесс был максимально комфортным\\.\n"+
@@ -200,7 +212,15 @@ func registerHandler(c tele.Context) error {
 		return err
 	}
 	timeSelector := &tele.ReplyMarkup{}
+	btnBack := tele.InlineButton{
+		Text: "⬅️ Назад",
+		Data: Back + "@start",
+	}
+
+	btns = append(btns, []tele.InlineButton{btnBack})
+
 	timeSelector.InlineKeyboard = btns
+
 	err = c.Send("Похоже тебе нужно разобраться в питании, получить советы по планированию рациона или просто разобраться в том, что мешает двигаться вперед, моя консультация — это то, что тебе нужно\\. Мы разберемся, как сделать твое питание здоровым и удобным\\."+
 		"\n*Выбери удобное время:*", tele.ModeMarkdownV2, timeSelector)
 
@@ -208,26 +228,18 @@ func registerHandler(c tele.Context) error {
 }
 
 func handleRegistrationResponse(c tele.Context, userIDStr, username, slotId string) error {
-	greeting := "Здравствуйте, я хочу к вам на консультацию."
 	userToId, err := strconv.ParseInt(userIDStr, 10, 64)
 	if err != nil {
 		return c.Send("Ошибка: некорректный ID пользователя")
 	}
-
+	greeting := "Здравствуйте, я хочу к вам на консультацию."
 	selector := &tele.ReplyMarkup{}
-	whatsAppUrl, err := url.Parse("https://wa.me/79659413788")
-	if err != nil {
-		log.Fatal(err)
-	}
-	params := url.Values{}
-	params.Add("text", greeting)
-	whatsAppUrl.RawQuery = params.Encode()
 	selector.Inline(
 		selector.Row(
-			selector.URL("WhatsApp", whatsAppUrl.String()),
+			selector.URL("WhatsApp", utils.GetEncodedString("https://wa.me/79659413788", greeting)),
 		),
 		selector.Row(
-			selector.URL("Telegram", fmt.Sprintf("https://t.me/ReginaUspeshnaya?text=%s", greeting)),
+			selector.URL("Telegram", utils.GetEncodedString("https://t.me/ReginaUspeshnaya", greeting)),
 		),
 	)
 
@@ -251,9 +263,11 @@ func dietHandler(c tele.Context) error {
 	selector := &tele.ReplyMarkup{}
 	btnFirst := selector.Data("на 2 недели за 990 рублей 🔥", FirstDiet)
 	btnSecond := selector.Data("на 4 недели за 1590 рублей 🔥", SecondDiet)
+	btnBack := selector.Data("⬅️ Назад", Back+"@start")
 	selector.Inline(
 		selector.Row(btnFirst),
 		selector.Row(btnSecond),
+		selector.Row(btnBack),
 	)
 
 	return c.Send("Есть два варианта приобретения РАЦИОНА — они сбалансированные, доступные и легкие\\! "+
@@ -273,8 +287,11 @@ func handleDietButtons(c tele.Context, action string) error {
 		description = "🥑 Рацион на 4 недели\nДля тех, кто готов к устойчивому результату\n\n🌸 4 недели — это не просто меню. Это настоящая перезагрузка тела и питания.\n\nТы не просто ешь.\nТы начинаешь заботиться о себе — осознанно, вкусно, стабильно.\n\n🔹 4 недели разнообразного, лёгкого и вкусного питания\n🔹 Чёткий план без скуки и однообразия\n🔹 Поддержка гормонального фона, ЖКТ и уровня энергии\n🔹 Еда, которая насыщает, а не «разгоняет» аппетит\n🔹 Рацион составлен с учётом физиологии, без дефицитов\n🔹 Без БАДов, без экзотики, без страха перед едой\n\n🌿 Особенно подойдёт тем, кто:\n— хочет не просто похудеть, а перейти на питание, которое держится\n— устал от диет и откатов\n— готов заложить прочную основу для здоровья\n\n🧡 Этот рацион — как личная забота, которая рядом каждый день.\nТы не один/а. Ты в потоке. Ты начинаешь жить легче.\n"
 	}
 	btnBuy := selector.Data("Оплатить", unique)
+	btnBack := selector.Data("⬅️ Назад", Back+"@diets")
+
 	selector.Inline(
 		selector.Row(btnBuy),
+		selector.Row(btnBack),
 	)
 	return c.Send(description, selector)
 }
