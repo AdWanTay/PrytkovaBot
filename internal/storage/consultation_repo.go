@@ -1,9 +1,8 @@
 package storage
 
 import (
-	models "PrytkovaBot/internal/models"
+	"PrytkovaBot/internal/models"
 	"database/sql"
-	"fmt"
 	"time"
 )
 
@@ -42,6 +41,7 @@ func BookSlot(db *sql.DB, slotID int, userID int64, username string) error {
 	)
 	return err
 }
+
 func GetBookedSlots(db *sql.DB) ([]models.Slot, error) {
 	rows, err := db.Query(`
 		SELECT id, time, user_id, user_name 
@@ -65,27 +65,42 @@ func GetBookedSlots(db *sql.DB) ([]models.Slot, error) {
 
 	return slots, nil
 }
-
 func CreateSlots(db *sql.DB) error {
-	rows, err := db.Query("SELECT 1 FROM slots WHERE time > ? LIMIT 1", time.Now())
+	// Считаем количество свободных (не забронированных) слотов в будущем
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM slots WHERE time > ? AND is_booked = 0", time.Now()).Scan(&count)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 
-	if rows.Next() {
-		return fmt.Errorf("слоты уже были созданы. Пропускаем создание новых")
+	// Если свободных слотов >= 10 — ничего не делаем
+	if count >= 10 {
+		return nil
 	}
-	// Создаем слоты на следующие 14 дней
+
+	// Создаем недостающие слоты на 14 дней вперед (если таких еще нет)
 	for day := 0; day < 14; day++ {
-		date := time.Now().AddDate(0, 0, day) // Начинаем с сегодняшнего дня и добавляем по дням
+		date := time.Now().AddDate(0, 0, day)
 		for hour := 12; hour < 16; hour++ {
 			slotTime := time.Date(date.Year(), date.Month(), date.Day(), hour, 0, 0, 0, time.Local)
-			_, err := db.Exec("INSERT INTO slots (time, is_booked) VALUES (?, 0)", slotTime)
+
+			// Проверим, существует ли уже такой слот
+			var exists bool
+			err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM slots WHERE time = ?)", slotTime).Scan(&exists)
+			if err != nil {
+				return err
+			}
+			if exists {
+				continue
+			}
+
+			// Вставляем слот
+			_, err = db.Exec("INSERT INTO slots (time, is_booked) VALUES (?, 0)", slotTime)
 			if err != nil {
 				return err
 			}
 		}
 	}
+
 	return nil
 }

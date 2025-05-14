@@ -24,7 +24,7 @@ func main() {
 		log.Fatal(err)
 	}
 	defer db.Close()
-	services.CreateSlotsPerPeriod(db, 24*time.Hour)
+	services.CreateSlotsPerPeriod(db, 12*time.Hour)
 
 	pref := tele.Settings{
 		Token:  config.BotToken,
